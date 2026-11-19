@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <title>Maçkolik Nesine Açılış Oranları &amp; Oran Şikesi Radarı</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar__inner">
+      <div class="brand">
+        <span class="brand__badge" aria-hidden="true">M</span>
+        <div>
+          <h1 class="brand__title">Maçkolik Nesine Oran Radarı</h1>
+          <p class="brand__sub">Başlamamış Maçlar • Nesine Oranları • 1.90-2.00 &amp; Çalışan Oranlar (2.10-2.18)</p>
+        </div>
+      </div>
+
+      <div class="topbar__actions">
+        <div class="sync-meta" aria-live="polite">
+          <span id="syncStatus">Yükleniyor...</span>
+        </div>
+        <button type="button" id="refreshBtn" class="btn btn--primary">
+          Nesine'den Güncelle
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- KPI Summary -->
+    <section class="stats-grid" aria-label="Özet İstatistikler">
+      <article class="stat-card">
+        <span class="stat-card__label">Başlamamış Nesine</span>
+        <strong class="stat-card__value" id="statTotal">-</strong>
+        <span class="stat-card__hint">Maçkolik Canlı Sonuçlar</span>
+      </article>
+      <article class="stat-card stat-card--signal">
+        <span class="stat-card__label">Oran Şikesi Yakalanan</span>
+        <strong class="stat-card__value" id="statSignals">-</strong>
+        <span class="stat-card__hint">1.90-2.00 / 2.10-2.18 / %82+</span>
+      </article>
+      <article class="stat-card">
+        <span class="stat-card__label">Defter Arşivi</span>
+        <strong class="stat-card__value" id="statNotebook">31</strong>
+        <span class="stat-card__hint">Kayıtlı şike örneği (+6 &amp; İY/MS)</span>
+      </article>
+      <article class="stat-card">
+        <span class="stat-card__label">Oran Kaynağı</span>
+        <strong class="stat-card__value stat-card__value--sm">Nesine (Canlı)</strong>
+        <span class="stat-card__hint">Sadece başlamamış maçlar</span>
+      </article>
+    </section>
+
+    <!-- Navigation Tabs -->
+    <nav class="tabs" aria-label="Görünüm Seçimi">
+      <button type="button" class="tab is-active" data-tab="bulletin">
+        Tüm Bülten (Açılış)
+      </button>
+      <button type="button" class="tab" data-tab="signals">
+        🎯 Şike Yakalananlar <span class="tab__count" id="tabSignalCount">0</span>
+      </button>
+      <button type="button" class="tab" data-tab="notebook">
+        📓 Defter Arşivi (31 Maç)
+      </button>
+    </nav>
+
+    <!-- Filter Panel (visible on bulletin & signals) -->
+    <section class="filter-panel" id="filterPanel" aria-label="Tarih ve Oran Filtreleri">
+      <div class="date-bar" aria-label="Tarih Seçimi">
+        <div class="date-chips" id="dateChips"></div>
+        <label class="field field--date">
+          <span>Takvimden Seç</span>
+          <input type="date" id="datePicker" aria-label="Tarih seçin">
+        </label>
+      </div>
+
+      <div class="filter-presets">
+        <button type="button" class="chip is-active" data-preset="all">Tümü</button>
+        <button type="button" class="chip" data-preset="190">1.90 - 2.00 Şikesi</button>
+        <button type="button" class="chip" data-preset="210">Çalışan Oranlar (2.03 - 2.20)</button>
+        <button type="button" class="chip" data-preset="plus6">+6 Oranı Olanlar</button>
+        <button type="button" class="chip" data-preset="moved">📉📈 Oranı Değişenler</button>
+      </div>
+
+      <div class="filter-inputs">
+        <label class="field">
+          <span>Ara (Takım / Lig / Kod)</span>
+          <input type="search" id="searchInput" placeholder="Örn: Hamburg, 3307575...">
+        </label>
+        <label class="field field--num">
+          <span>MS 1 Min</span>
+          <input type="number" step="0.01" id="ms1Min" placeholder="1.90">
+        </label>
+        <label class="field field--num">
+          <span>MS 1 Max</span>
+          <input type="number" step="0.01" id="ms1Max" placeholder="2.20">
+        </label>
+        <label class="field field--num">
+          <span>MS X Min</span>
+          <input type="number" step="0.01" id="msXMin" placeholder="3.00">
+        </label>
+        <label class="field field--num">
+          <span>MS X Max</span>
+          <input type="number" step="0.01" id="msXMax" placeholder="3.60">
+        </label>
+        <label class="field field--num">
+          <span>MS 2 Min</span>
+          <input type="number" step="0.01" id="ms2Min" placeholder="1.90">
+        </label>
+        <label class="field field--num">
+          <span>MS 2 Max</span>
+          <input type="number" step="0.01" id="ms2Max" placeholder="2.85">
+        </label>
+        <label class="field field--num">
+          <span>+6 Min</span>
+          <input type="number" step="0.01" id="plus6Min" placeholder="5.00">
+        </label>
+        <button type="button" id="clearFiltersBtn" class="btn btn--ghost">Temizle</button>
+      </div>
+    </section>
+
+    <!-- Live Bulletin / Signals Table -->
+    <section id="bulletinSection">
+      <div class="visually-hidden" role="status" id="sortStatus"></div>
+      <div tabindex="0" role="region" aria-labelledby="bulletinCaption" class="table-wrapper">
+        <table id="bulletinTable">
+          <caption id="bulletinCaption" class="table-caption">
+            Maçkolik Başlamamış Maçlar — Nesine Oranları
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col" data-type="number">
+                <button type="button" class="sort-btn" data-col="0">Tarih / Saat</button>
+              </th>
+              <th scope="col" data-type="text">
+                <button type="button" class="sort-btn" data-col="1">Lig / Kod</button>
+              </th>
+              <th scope="col" data-type="text">
+                <button type="button" class="sort-btn" data-col="2">Maç</button>
+              </th>
+              <th scope="col" data-type="number">
+                <button type="button" class="sort-btn" data-col="3">MS 1</button>
+              </th>
+              <th scope="col" data-type="number">
+                <button type="button" class="sort-btn" data-col="4">MS X</button>
+              </th>
+              <th scope="col" data-type="number">
+                <button type="button" class="sort-btn" data-col="5">MS 2</button>
+              </th>
+              <th scope="col" data-type="number">
+                <button type="button" class="sort-btn" data-col="6">+6 Gol</button>
+              </th>
+              <th scope="col" data-type="number">
+                <button type="button" class="sort-btn" data-col="7">2.5 Üst</button>
+              </th>
+              <th scope="col" data-type="number">
+                <button type="button" class="sort-btn" data-col="8">KG Var</button>
+              </th>
+              <th scope="col" data-type="number">
+                <button type="button" class="sort-btn" data-col="9">Şike / Benzerlik</button>
+              </th>
+            </tr>
+          </thead>
+          <tbody id="bulletinBody">
+            <tr>
+              <td colspan="10" class="empty-cell">Maçkolik Nesine verileri yükleniyor...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Notebook Archive Section -->
+    <section id="notebookSection" hidden>
+      <div class="notebook-toolbar">
+        <div class="filter-presets">
+          <button type="button" class="chip is-active" data-nb-group="all">Tümü (31)</button>
+          <button type="button" class="chip" data-nb-group="1.90 - 2.00">1.90 - 2.00 Grubu</button>
+          <button type="button" class="chip" data-nb-group="Çalışan Oranlar"># Çalışan Oranlar # (2.10-2.18)</button>
+        </div>
+        <button type="button" id="openAddPatternBtn" class="btn btn--primary">+ Deftere Oran Ekle</button>
+      </div>
+
+      <div tabindex="0" role="region" aria-labelledby="notebookCaption" class="table-wrapper">
+        <table id="notebookTable" class="notebook-table">
+          <caption id="notebookCaption" class="table-caption">
+            Defter Arşivi — Doğrulanmış Oran Şikesi Maçları
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Grup</th>
+              <th scope="col">Maç</th>
+              <th scope="col">Açılış 1</th>
+              <th scope="col">Açılış X</th>
+              <th scope="col">Açılış 2</th>
+              <th scope="col">+6 Gol</th>
+              <th scope="col">Skor</th>
+              <th scope="col">İY / MS</th>
+            </tr>
+          </thead>
+          <tbody id="notebookBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Match Detail Dialog -->
+  <dialog id="matchDialog" class="modal">
+    <div class="modal__header">
+      <h2 id="modalTitle">Maç Detayı</h2>
+      <button type="button" id="closeModalBtn" class="btn btn--ghost" aria-label="Kapat">✕</button>
+    </div>
+    <div id="modalBody" class="modal__body"></div>
+  </dialog>
+
+  <!-- Add Pattern Dialog -->
+  <dialog id="addPatternDialog" class="modal">
+    <div class="modal__header">
+      <h2>Deftere Yeni Oran Şikesi Ekle</h2>
+      <button type="button" id="closeAddModalBtn" class="btn btn--ghost" aria-label="Kapat">✕</button>
+    </div>
+    <form id="addPatternForm" class="modal__body form-grid">
+      <label class="field">
+        <span>Grup</span>
+        <select name="group">
+          <option value="1.90 - 2.00">1.90 - 2.00</option>
+          <option value="Çalışan Oranlar">Çalışan Oranlar</option>
+          <option value="Özel Kayıt">Özel Kayıt</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Maç Adı *</span>
+        <input type="text" name="match" required placeholder="Örn: Hamburg - W. Bremen">
+      </label>
+      <label class="field">
+        <span>Açılış MS 1 *</span>
+        <input type="number" step="0.01" name="ms1" required placeholder="2.13">
+      </label>
+      <label class="field">
+        <span>Açılış MS X *</span>
+        <input type="number" step="0.01" name="msX" required placeholder="3.10">
+      </label>
+      <label class="field">
+        <span>Açılış MS 2 *</span>
+        <input type="number" step="0.01" name="ms2" required placeholder="2.58">
+      </label>
+      <label class="field">
+        <span>+6 Gol Oranı</span>
+        <input type="number" step="0.01" name="plus6" placeholder="10.05">
+      </label>
+      <label class="field">
+        <span>Maç Skoru</span>
+        <input type="text" name="score" placeholder="3-2">
+      </label>
+      <label class="field">
+        <span>İY / MS</span>
+        <input type="text" name="iyms" placeholder="2/1">
+      </label>
+      <div class="form-actions">
+        <button type="submit" class="btn btn--primary">Kaydet</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
