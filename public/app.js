@@ -610,12 +610,112 @@ async function refreshFromMackolik() {
 
 els.refreshBtn.addEventListener('click', refreshFromMackolik);
 
+const LOCAL_TRACK_KEY = 'nesine_radar_track_v1';
+const LOCAL_NB_KEY = 'nesine_radar_custom_nb_v1';
+const TRACKED_FIELDS = ['ms1', 'msX', 'ms2', 'plus6', 'ust25', 'kgVar'];
+
+function loadLocalTrack() {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_TRACK_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function saveLocalTrack(track) {
+  try {
+    localStorage.setItem(LOCAL_TRACK_KEY, JSON.stringify(track));
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+function mergeClientTracking(matches) {
+  const track = loadLocalTrack();
+  const nowMs = Date.now();
+  let changed = false;
+
+  const enriched = matches.map((m) => {
+    // If server already provided movements & lockedSignals (local Node server), sync into localStorage too
+    const o = m.odds || {};
+    let rec = track[m.key];
+    if (!rec) {
+      rec = {
+        utcMs: m.utcMs,
+        initialOdds: m.initialOdds || { ...o },
+        lockedSignals: m.lockedSignals || m.analysis?.signals || [],
+      };
+      track[m.key] = rec;
+      changed = true;
+    } else {
+      for (const f of TRACKED_FIELDS) {
+        if (rec.initialOdds[f] == null && o[f] != null) {
+          rec.initialOdds[f] = o[f];
+          changed = true;
+        }
+      }
+      const existingCodes = new Set((rec.lockedSignals || []).map((s) => s.code));
+      for (const s of m.analysis?.signals || []) {
+        if (!existingCodes.has(s.code)) {
+          rec.lockedSignals.push(s);
+          existingCodes.add(s.code);
+          changed = true;
+        }
+      }
+    }
+
+    // Compute movements from earliest known initialOdds
+    const movements = { ...(m.movements || {}) };
+    let hasMovement = Boolean(m.hasMovement);
+    for (const f of TRACKED_FIELDS) {
+      if (movements[f]) continue;
+      const from = rec.initialOdds?.[f] ?? null;
+      const to = o[f] ?? null;
+      if (from !== null && to !== null) {
+        const diff = Number((to - from).toFixed(2));
+        if (Math.abs(diff) >= 0.01) {
+          movements[f] = { from, to, delta: diff, dir: diff > 0 ? 'up' : 'down' };
+          hasMovement = true;
+        }
+      }
+    }
+
+    const liveSignals = m.analysis?.signals || [];
+    const locked = rec.lockedSignals?.length ? rec.lockedSignals : liveSignals;
+    const keptViaLock = Boolean(m.analysis?.keptViaLock) || (locked.length > 0 && liveSignals.length === 0);
+
+    return {
+      ...m,
+      movements,
+      hasMovement,
+      analysis: {
+        ...(m.analysis || {}),
+        signals: locked,
+        isSignal: locked.length > 0,
+        keptViaLock,
+      },
+    };
+  });
+
+  // Prune finished matches (>6h old) from localStorage
+  for (const k of Object.keys(track)) {
+    if (track[k].utcMs && track[k].utcMs < nowMs - 6 * 3600 * 1000) {
+      delete track[k];
+      changed = true;
+    }
+  }
+  if (changed) saveLocalTrack(track);
+
+  return enriched;
+}
+
 function applyMatchesPayload(data) {
-  state.matches = data.matches || [];
+  state.matches = mergeClientTracking(data.matches || []);
   state.lastSync = data.lastSync;
   els.statTotal.textContent = String(data.total ?? state.matches.length);
-  els.statSignals.textContent = String(data.signalCount ?? 0);
-  els.tabSignalCount.textContent = String(data.signalCount ?? 0);
+  const sigCount = state.matches.filter((m) => m.analysis?.isSignal).length;
+  els.statSignals.textContent = String(sigCount);
+  els.tabSignalCount.textContent = String(sigCount);
   els.syncStatus.textContent = fmtSyncTime(data.lastSync);
   renderDateChips();
   renderBulletinTable();
